@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import random
 import csv
+import cv2
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
@@ -74,6 +75,7 @@ class CocoDataset(Dataset):
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
         path       = os.path.join(self.root_dir, 'images', self.set_name, image_info['file_name'])
         img = skimage.io.imread(path)
+        
 
         if len(img.shape) == 2:
             img = skimage.color.gray2rgb(img)
@@ -142,7 +144,7 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.class_list) as file:
                 self.classes = self.load_classes(csv.reader(file, delimiter=','))
         except ValueError as e:
-            raise(ValueError('invalid CSV class file: {}: {}'.format(self.class_list, e)))
+            raise ValueError('invalid CSV class file: {}: {}'.format(self.class_list, e))
 
         self.labels = {}
         for key, value in self.classes.items():
@@ -153,7 +155,7 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.train_file) as file:
                 self.image_data = self._read_annotations(csv.reader(file, delimiter=','), self.classes)
         except ValueError as e:
-            raise(ValueError('invalid CSV annotations file: {}: {}'.format(self.train_file, e)))
+            raise ValueError('invalid CSV annotations file: {}: {}'.format(self.train_file, e))
         self.image_names = list(self.image_data.keys())
 
     def _parse(self, value, function, fmt):
@@ -166,7 +168,7 @@ class CSVDataset(Dataset):
         try:
             return function(value)
         except ValueError as e:
-            raise_from(ValueError(fmt.format(e)), None)
+            raise ValueError(fmt.format(e))
 
     def _open_for_csv(self, path):
         """
@@ -188,7 +190,7 @@ class CSVDataset(Dataset):
             try:
                 class_name, class_id = row
             except ValueError:
-                raise(ValueError('line {}: format should be \'class_name,class_id\''.format(line)))
+                raise ValueError('line {}: format should be \'class_name,class_id\''.format(line))
             class_id = self._parse(class_id, int, 'line {}: malformed class ID: {{}}'.format(line))
 
             if class_name in result:
@@ -210,12 +212,20 @@ class CSVDataset(Dataset):
         return sample
 
     def load_image(self, image_index):
-        img = skimage.io.imread(self.image_names[image_index])
-
+        #img = skimage.io.imread(self.image_names[image_index])
+        
+        #img = Image.open(self.image_names[image_index])
+        img = cv2.imread(self.image_names[image_index], cv2.IMREAD_UNCHANGED)
         if len(img.shape) == 2:
-            img = skimage.color.gray2rgb(img)
-
-        return img.astype(np.float32)/255.0
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        img_array = img.astype(np.float32)/255.0
+        if img_array.shape[-1] == 4:
+            img_array = img_array[:,:,:3] # remove alpha channel from 4-channel images
+        #print("about to return something with shape: {}".format(img_array.shape))
+        #print("you could instead return this thing: {}".format(image_without_alpha.shape))
+        
+        #return img.astype(np.float32)/255.0
+        return img_array/255.0
 
     def load_annotations(self, image_index):
         # get ground truth annotations
@@ -257,7 +267,7 @@ class CSVDataset(Dataset):
             try:
                 img_file, x1, y1, x2, y2, class_name = row[:6]
             except ValueError:
-                raise_from(ValueError('line {}: format should be \'img_file,x1,y1,x2,y2,class_name\' or \'img_file,,,,,\''.format(line)), None)
+                raise ValueError('line {}: format should be \'img_file,x1,y1,x2,y2,class_name\' or \'img_file,,,,,\''.format(line))
 
             if img_file not in result:
                 result[img_file] = []
@@ -402,6 +412,7 @@ class Normalizer(object):
         self.std = np.array([[[0.229, 0.224, 0.225]]])
 
     def __call__(self, sample):
+
 
         image, annots = sample['img'], sample['annot']
 
